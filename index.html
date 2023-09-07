@@ -1,0 +1,71 @@
+<!-- A very minimal client for testing. Assumes only one game, and a happy path of usage -->
+<body>
+  <script src="https://unpkg.com/vue@3"></script>
+
+  <div id="app">
+    <div v-if="store.game">
+      <h1>{{ store.game.title }}</h1>
+      <div v-for="i in 3">
+        <button v-for="j in 3" @click="() => move((i-1)*3+j-1)">
+          {{ markFor((i-1)*3+j-1) }}
+        </button>
+      </div>
+      <div v-if="store.game.turn == store.game.players.indexOf(uid)">It's your turn!</div>
+      <div v-if="store.game.result">
+        Game over. <span v-if="store.game.result == uid">You win!</span>
+      </div>
+    </div>
+
+    <div v-else>
+      <div v-for="game in store.lobby.games">
+        <span>{{ game.title }}</span>
+        <span>{{ game.players.length }} / 2 players</span>
+        <button @click="() => joinGame(game.id)">Join</button>
+      </div>
+      <div>
+        <button @click="createGame">New Game</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let uid = document.cookie.match(/uid=(\w+)/)[1]
+    let store = window.store = Vue.reactive({lobby: {games: []}, game: null})
+    Vue.createApp({setup}).mount('#app')
+
+    syncedSocket('lobby', 'lobby')
+
+    function setup () {
+      return {store, createGame, joinGame, markFor, move, uid}
+    }
+
+    async function createGame () {
+      let resp = await fetch('/create')
+      let id = await resp.text()
+      syncedSocket(`game?id=${id}`, 'game')
+    }
+
+    async function joinGame (id) {
+      await fetch(`/join?id=${id}`)
+      syncedSocket(`game?id=${id}`, 'game')
+    }
+
+    async function move (index) {
+      await fetch(`/move?id=${store.game.id}&index=${index}`)
+    }
+
+    function markFor (index) {
+      let idx = store.game.board[index]
+      return idx == null ? '-' : ['X', '0'][idx]
+    }
+
+    // Opens a websocket to a specific path. When we recieve data on the socket,
+    // we automatically write it into a given path in our store.
+    function syncedSocket (path, property) {
+      let ws = new WebSocket(`ws://${window.location.host}/${path}`)
+      ws.onmessage = e => store[property] = JSON.parse(e.data)
+      // todo retry with backoff on error or close
+      return ws
+    }
+  </script>
+</body>
